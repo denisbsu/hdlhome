@@ -1,0 +1,197 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Socket.IO testing</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font: 13px Helvetica, Arial; }
+      form input { border: 0; padding: 10px; width: 90%; margin-right: .5%; }
+      form button { width: 9%; background: rgb(130, 224, 255); border: none; padding: 10px; }
+      #messages { list-style-type: none; margin: 0; padding: 0;}
+      #messages li { padding: 5px 10px; }
+      #messages li:nth-child(odd) { background: #eee; }
+      #messagesContainer { height:20%; overflow:scroll; position: fixed; bottom: 0; width: 100%; }
+      #playground {height:80%; width: 100%; background-color: Bisque; position: fixed; bottom: 20%; font-family: monospace}
+      #devProp td {height:23px;}
+      #devices { background-color: Azure; height: 80%; width:20%; float:left; }
+      #mac { background-color: Bisque; height: 80%; width:20%; float:left; }
+      #chStatus { background-color: Ivory; height: 80%; float:left; }
+      .toggleStatus { background-color: Ivory; height: 80%; float:left; }
+      .toggleStatus div { display: inline-block; border-color: Gold; margin-right : 5px; width: 4ch; border-style: solid; border-width: 2px; padding: 0px; text-align: right; padding: 2px; }
+      .statusDiv { display: inline-block; margin-right : 5px; padding: 0px; text-align: right; padding: 2px; }
+
+      #chStatus div { display: inline-block; border-color: Gold; margin-right : 5px; width: 4ch; border-style: solid; border-width: 2px; padding: 0px; text-align: right; padding: 2px; }
+    </style>
+  </head>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="http://code.jquery.com/jquery-1.11.1.js"></script>
+  <script>
+    var socket = io();
+    var showDetails = function(dev) {
+      var addr = dev.target.id.split("-");
+      socket.emit('read mac', {'subnet': addr[1], 'ip':addr[2]});
+      socket.emit('read ch status', {'subnet': addr[1], 'ip':addr[2]});
+    }
+    var flipCh = function(dev) {
+      var addr = dev.target.id.split("-");
+      socket.emit('flip ch', {'subnet':addr[1],'ip':addr[2],'ch':addr[4],'level':dev.target.textContent});
+    }
+    socket.on('network activity', function(msg){
+      $('#messages').prepend($('<li>').text(msg));
+    });
+    socket.on('broadcast sensors', function(dev){
+      var divId = "sensor-" + dev['subnet'] + "-" + dev['ip'];
+      var raw_status = dev['note'];
+      raw_status = raw_status.replace(/.*\(/, "");
+      raw_status = raw_status.replace(/Unused.*/, "");      
+      raw_status = raw_status.replace(/false/g, "f");      
+      raw_status = raw_status.replace(/true/g, "t");      
+      raw_status = raw_status.replace(/ Motion/g, "");
+      raw_status = raw_status.replace(/: /g, ":");
+      raw_status = raw_status.replace(/Temp/, "T");
+      raw_status = raw_status.replace(/Lux/, "L");
+
+      
+      var parts = raw_status.split(", ");
+      $("#"+divId).empty()
+      for (var index in parts) {
+        $("#"+divId).append($("<div>").attr("id", divId + "-" + index).attr("class", "statusDiv").text(parts[index]));
+      }
+    })
+    socket.on('temp broadcast', function(dev){
+      var divId = "sensor-" + dev['subnet'] + "-" + dev['ip'];
+      var raw_status = dev['note'];
+      var offset = /Ch: [^,]*(?=,)/.exec(raw_status)[0].replace("Ch: ","");
+      var type = "Temp" + offset;
+      var value = /T\(float\): [^,]*(?=\))/.exec(raw_status)[0].replace("T\(float\): ","");
+      if ($("#"+divId).children().length == 0) {
+        $("#"+divId).empty()
+        for (i=0;i<9;++i) {
+          $("#"+divId).append($("<div>").attr("id", divId + "-" + i).attr("class", "statusDiv"));
+        }
+      }
+      $("#"+divId + "-" + offset).text(type + ": " + value);
+    })
+    socket.on('temp response', function(dev){
+      var divId = "sensor-" + dev['subnet'] + "-" + dev['ip'];
+      var raw_status = dev['note'];
+      var offset = /Ch: [^,]*(?=,)/.exec(raw_status)[0].replace("Ch: ","");
+      var type = "Temp" + offset;
+      var value = /t: [^,]*(?=\))/.exec(raw_status)[0].replace("t: ","");
+      if ($("#"+divId).children().length == 0) {
+        $("#"+divId).empty()
+        for (i=0;i<9;++i) {
+          $("#"+divId).append($("<div>").attr("id", divId + "-" + i).attr("class", "statusDiv"));
+        }
+      }
+      $("#"+divId + "-" + offset).text(type + ": " + value);
+    })
+    socket.on('report av', function(dev){
+      var divId = "sensor-" + dev['subnet'] + "-" + dev['ip'];
+      var raw_status = dev['note'];
+      var offset = /Ch: [^,]*(?=,)/.exec(raw_status)[0].replace("Ch: ","");
+      var type = /Type: [^,]*(?=,)/.exec(raw_status)[0].replace("Type: ","");
+      var value = /Value:[^,]*(?=\))/.exec(raw_status)[0].replace("Value:","");
+      if ($("#"+divId).children().length == 0) {
+        $("#"+divId).empty()
+        for (i=0;i<9;++i) {
+          $("#"+divId).append($("<div>").attr("id", divId + "-" + i).attr("class", "statusDiv"));
+        }
+      }
+      $("#"+divId + "-" + offset).text(type + ": " + value);
+    })
+    socket.on('dev found', function(dev){
+      var divId = dev['subnet'] + "-" + dev['ip'];
+      var divContent = dev['type'] + dev['note'].split(":")[1];
+      var trId = "tr" + divId;
+      if ($("#" + trId).length == 0) $('#devProp').append($('<tr>').attr("id", trId));
+      var trObj = $("#" + trId);
+      trObj.empty();
+
+      trObj.append($('<td>').attr("id", "name-" + divId));
+      $('#name-' + divId).text(divContent);
+      $('#name-' + divId).click(showDetails);
+
+      trObj.append($('<td>').attr("id", "mac-" + divId));
+      socket.emit('read mac', {'subnet': dev['subnet'], 'ip':dev['ip']});
+
+      trObj.append($('<td>').attr("id", "status-" + divId));
+      socket.emit('read ch status', {'subnet': dev['subnet'], 'ip':dev['ip']});
+
+      trObj.append($('<td>').attr("id", "sensor-" + divId));
+
+    })
+    socket.on('mac found', function(dev){
+//      $("#mac").text(dev['note']);
+      var tdId = "mac-" + dev['subnet'] + "-" + dev['ip'];
+      var mac = dev['note'];
+      mac = mac.replace(/^[^ ]* /,"");
+      mac = mac.replace(/[ )].*$/,"");
+      $("#" + tdId).text(mac);
+
+    })
+    socket.on('ch found', function(dev){
+      var tdId = "status-" + dev['subnet'] + "-" + dev['ip'];
+      var tdObj = $("#" + tdId);
+      tdObj.empty();
+      tdObj.attr("class", "toggleStatus");
+      var length =  parseInt(dev['raw'].substr(0, 2), 16);
+      for (var i = 0; i < length; i++) {
+        tdObj
+        .append($('<div>')
+        .attr("id", tdId + "-ch-"+(i+1))
+        .attr("title", "UNKNOWN")
+        .text(parseInt(dev['raw'].substr(2 + i*2, 2), 16))
+        .click(flipCh));
+        socket.emit('read ch note', {'subnet':dev['subnet'],'ip':dev['ip'],'ch':(i+1)});
+      };
+
+
+
+    })
+    socket.on('ch updated', function(dev){
+      var divId = "status-" + dev['subnet'] + "-" + dev['ip'];
+      var ch = parseInt(dev['raw'].substr(0, 2), 16);
+      var result = parseInt(dev['raw'].substr(2, 2), 16);
+      if (result != 248) {
+        return;
+      }
+      var level = parseInt(dev['raw'].substr(4, 2), 16);
+      var chElement = $("#" + divId + "-ch-" + ch);
+      if (chElement) {
+        chElement.text(level);
+      }
+    })
+    var cp1251lookup = "                                 !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ ЂЃ‚ѓ„…†‡€‰Љ‹ЊЌЋЏђ‘’“”•–— ™љ›њќћџ ЎўЈ¤Ґ¦§Ё©Є«¬ ®Ї°±Ііґµ¶·ё№є»јЅѕїАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюя";
+    socket.on('ch note', function(dev){
+      var divId = "status-" + dev['subnet'] + "-" + dev['ip'];
+      var ch = parseInt(dev['raw'].substr(0, 2), 16);
+      var result = dev['raw'].substr(2);
+      result = result
+      .match(/.{1,2}/g)
+      .map(function(x){ return cp1251lookup[parseInt(x, 16)] || ""})
+      .join("");
+      var chElement = $("#" + divId + "-ch-" + ch);
+      if (chElement) {
+        chElement.attr("title", result);
+      }
+    })
+
+  </script>
+
+  <body>
+    <div id="playground">
+    <table id="devProp">
+      <tr>
+        <td>Name</td>
+        <td>MAC</td>
+        <td>Ch Status</td>
+        <td>Sensors</td>
+      </tr>
+    </table>
+    </div>
+    <div id="messagesContainer">
+    <ul id="messages"></ul>
+    </div>
+  </body>
+</html>
